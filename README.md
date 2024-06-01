@@ -35,4 +35,4 @@ Autores
 Nome do Autor - Bruno Melo
 
 Licença
-Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE para mais detalhes.
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](https://github.com/BrunoMeloSlv/app_brasileirao_2024/blob/main/License) para mais detalhes.
