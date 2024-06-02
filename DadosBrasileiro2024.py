@@ -14,6 +14,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
+import matplotlib.pyplot as plt
 
 
 # Configuração da página
@@ -26,6 +27,28 @@ dados_multinomial.columns = dados_multinomial.iloc[0]
 dados_multinomial = dados_multinomial[1:]
 
 
+### Historico Brasileiraõ
+hist = pd.read_csv('brasileirao.csv')
+
+hist.rename(
+    columns={
+        'place':'Posição',
+        'acronym':'Sigla',
+        'team':'Time',
+        'points':'Pontos',
+        'played':'Jogos',
+        'won':'Vitórias',
+        'draw':'Empates',
+        'loss':'Derrotas',
+        'goals_for':'Gols Pró',
+        'goals_against':'Gols Contra',
+        'goals_diff':'Saldo de Gols'
+    }, inplace=True
+)
+
+
+
+##  footstats
 wb1 = op.load_workbook('footstats.xlsx')
 ws1 = wb1['Sheet1']
 dados_footstats = pd.DataFrame(ws1.values)
@@ -193,6 +216,7 @@ def top10_(jogador, clube):
 
     melhores_escolhas = pd.concat([soma, jogador_equipe], axis=1)
     melhores_escolhas = melhores_escolhas.sort_values(by='soma', ascending=False)
+    melhores_escolhas = melhores_escolhas.reset_index(drop=True)
 
     return melhores_escolhas
 
@@ -219,13 +243,13 @@ def filtrar_dados_por_clube(dados_footstats, clube_selecionado):
     else:
         return dados_footstats[dados_footstats['Equipe'] == clube_selecionado]
     
-
+    
 
 # Títulos e criação das abas
 st.title('Dashboard Brasileirão 2024 ⚽')
 
 # Criar abas
-abas = st.tabs(["Classificação", "Histórico", "Dados Jogadores","Top 10 Jogadores Semelhantes"])
+abas = st.tabs(["Classificação","Probabilidade", "Dados Jogadores","Top 10 Jogadores Semelhantes","Histórico"])
 
 # Primeira aba: Classificação
 with abas[0]:
@@ -234,7 +258,7 @@ with abas[0]:
     # Exibir tabela de classificação com estilos personalizados e sem índice
     st.markdown(aplicar_estilos(df).hide(axis='index').to_html(), unsafe_allow_html=True)
 
-# Segunda aba: Histórico
+# Segunda aba: Probabilidade
 with abas[1]:
     st.header("Histórico de Confrontos")
 
@@ -388,19 +412,7 @@ with abas[2]:
         fig_Falta_recebida.update_traces(marker_color='#023047')  # Adicionar cor personalizada
         fig_Falta_recebida.update_layout(yaxis_title='Falta recebida', xaxis_title='Jogadores')  # Adicionar rótulos
 
-        # Para o gráfico de Assistência gol
-        top_Assistência_gol = df_filtrado.nlargest(5, 'Assistência gol')
-        fig_Assistência_gol = px.bar(top_Assistência_gol, x='Jogador', y='Assistência gol', text_auto=True, title='Top Nº de Assistência gol')
-        fig_Assistência_gol.update_traces(marker_color='#023047')  # Adicionar cor personalizada
-        fig_Assistência_gol.update_layout(yaxis_title='Assistência gol', xaxis_title='Jogadores')  # Adicionar rótulos
-
-        # Para o gráfico de Assistência finalização
-        top_Assistência_finalização = df_filtrado.nlargest(5, 'Assistência finalização')
-        fig_Assistência_finalização = px.bar(top_Assistência_finalização, x='Jogador', y='Assistência finalização', text_auto=True, title='Top Nº de Assistência finalização')
-        fig_Assistência_finalização.update_traces(marker_color='#023047')  # Adicionar cor personalizada
-        fig_Assistência_finalização.update_layout(yaxis_title='Assistência finalização', xaxis_title='Jogadores')  # Adicionar rótulos
-
-
+    
         # Para o gráfico de Cartões Vermelhos
         top_Cartão_vermelho = df_filtrado.nlargest(5, 'Cartão vermelho')
         fig_Cartão_vermelho = px.bar(top_Cartão_vermelho, x='Jogador', y='Cartão vermelho', text_auto=True, title='Top Nº de Cartões Vermelhos')
@@ -457,7 +469,87 @@ with abas[3]:
         resultado = top10_(jogador, clube)
     st.dataframe(resultado)
 
+with abas[4]:
+
+   # Filtrar os dados onde 'Posição' é igual a 1
+    times_campeoes = hist[hist['Posição'] == 1]
+
+    # Contar a quantidade de vezes que cada time ficou na posição 1
+    contagem_times = times_campeoes['Time'].value_counts().reset_index()
+    contagem_times.columns = ['Time', 'Quantidade']
+
+    # Ordenar os times pelo número de vezes que ficaram na posição 1
+    contagem_times = contagem_times.sort_values(by='Quantidade', ascending=False)
+
+    # Criar o gráfico com o Plotly
+    fig = px.bar(contagem_times, x='Time', y='Quantidade', text='Quantidade', title='Times Campeões',
+                labels={'Time': 'Time', 'Quantidade': 'Quantidade'})
+
+    # Personalizar cores
+    fig.update_traces(marker_color='#023047')
+
+    # Adicionar rótulos
+    fig.update_layout(yaxis_title='Quantidade', xaxis_title='Time')
+
+    # Criar um filtro para temporada
+    temp = st.selectbox("Selecione a Temporada:", hist['season'].unique())
+
+    # Filtrar os dados pela temporada selecionada e remover a coluna 'season'
+    hist_filtrado = hist[hist['season'] == temp].drop(columns=['season']).reset_index(drop=True)
+
+    # Função para calcular o percentual
+    def calcular_percentual(df):
+        total_jogos = df['Vitórias'].sum() + df['Empates'].sum() + df['Derrotas'].sum()
+        df['Percentual_vitórias'] = df['Vitórias'] / total_jogos
+        df['Percentual_empates'] = df['Empates'] / total_jogos
+        df['Percentual_derrotas'] = df['Derrotas'] / total_jogos
+        return df
+
+    # Exibir os gráficos
+    
+
+    # Exibir a tabela completa
+    st.table(hist_filtrado)
+    st.plotly_chart(fig)
+
+    # Filtrar os dados pelo clube selecionado
+    clube_selecionado = st.selectbox("Selecione o Clube:", hist['Time'].unique())
+
+    # Filtrar os dados pelo clube selecionado
+    dados_clube = hist[hist['Time'] == clube_selecionado]
+
+    # Gráfico de linha para mostrar a posição do clube ao longo das temporadas
+    fig_posicao = px.line(dados_clube, x='season', y='Posição', title=f'Posição do {clube_selecionado} ao Longo das Temporadas')
+
+    # Calcular o número e percentual de vitórias, empates e derrotas
+    dados_clube_agrupados = dados_clube.groupby('season').agg({'Vitórias':'sum', 'Empates':'sum', 'Derrotas':'sum'})
+    dados_clube_agrupados = calcular_percentual(dados_clube_agrupados)
+
+    # Gráfico de barra para mostrar o número de vitórias, empates e derrotas
+    fig_resultados = px.bar(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Vitórias', 'Empates', 'Derrotas'], 
+                            title=f'Número de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
+
+    # Gráfico de linha para mostrar o percentual de vitórias, empates e derrotas
+    fig_percentual = px.line(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Percentual_vitórias', 'Percentual_empates', 'Percentual_derrotas'], 
+                            title=f'Percentual de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
+
+    # Gráfico de barras para mostrar a quantidade de gols pró e gols contra
+    fig_gols = px.bar(dados_clube, x='season', y=['Gols Pró', 'Gols Contra'], 
+                    title=f'Quantidade de Gols Pró e Contra do {clube_selecionado} por Temporada')
+    
+    # Organizar os gráficos em duas colunas
+    col1, col2 = st.columns(2)
+
+    # Exibir os gráficos na primeira coluna
+    col1.plotly_chart(fig_posicao)
+    col1.plotly_chart(fig_resultados)
+
+    # Exibir os gráficos na segunda coluna
+    col2.plotly_chart(fig_percentual)
+    col2.plotly_chart(fig_gols)
 
 
 
-   
+
+
+
