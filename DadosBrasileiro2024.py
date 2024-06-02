@@ -47,6 +47,10 @@ hist.rename(
 )
 
 
+## escudos
+
+escudo = pd.read_excel('Escudos.xlsx')
+
 
 ##  footstats
 wb1 = op.load_workbook('footstats.xlsx')
@@ -249,7 +253,7 @@ def filtrar_dados_por_clube(dados_footstats, clube_selecionado):
 st.title('Dashboard Brasileirão 2024 ⚽')
 
 # Criar abas
-abas = st.tabs(["Classificação","Probabilidade", "Dados Jogadores","Top 10 Jogadores Semelhantes","Histórico"])
+abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Clubes","Top 10 Jogadores Semelhantes","Histórico"])
 
 # Primeira aba: Classificação
 with abas[0]:
@@ -262,45 +266,55 @@ with abas[0]:
 with abas[1]:
     st.header("Histórico de Confrontos")
 
-    # Filtros por time mandante e visitante
-    mandante = st.selectbox('Selecione o time mandante:', df_prev['mandante'].unique())
-    visitante = st.selectbox('Selecione o time visitante:', df_prev['visitante'].unique())
+    # Selecionar o time mandante
+    mandante = st.selectbox('Selecione o time mandante:', sorted(df_prev['mandante'].unique()))
+
+    # Filtrar a lista de times visitantes para excluir o mandante selecionado
+    times_visitantes = df_prev['visitante'].unique()
+    times_visitantes = [time for time in times_visitantes if time != mandante]
+
+    # Selecionar o time visitante
+    visitante = st.selectbox('Selecione o time visitante:', sorted(times_visitantes))
 
     # Filtrar histórico de confrontos
     df_filtrado_historico = df_prev[(df_prev['mandante'] == mandante) & (df_prev['visitante'] == visitante)]
-    df_filtrado_prob = df_prev[(df_prev['mandante'] == mandante) & (df_prev['visitante'] == visitante)]
-    df_filtrado_prob_max = df_filtrado_prob[df_filtrado_prob['Temporada'] == max(df_filtrado_prob['Temporada'])]
+    df_filtrado_prob = df_filtrado_historico.copy()
 
-    df_filtrado_historico = df_filtrado_historico.drop(columns=[0,1,2])
+    # Verificar se o DataFrame filtrado está vazio
+    if df_filtrado_prob.empty:
+        st.write('Os times selecionados nunca se enfrentaram.')
+    else:
+        # Filtrar a temporada máxima
+        max_temp = df_filtrado_prob['Temporada'].max()
+        df_filtrado_prob_max = df_filtrado_prob[df_filtrado_prob['Temporada'] == max_temp]
 
-    # Layout de colunas para histórico e probabilidades
-    col1, col2 = st.columns(2)
+        # Layout de colunas para histórico e probabilidades
+        col1, col2 = st.columns(2)
 
+        # Exibir tabela de histórico filtrada e sem índice
+        with col1:
+            st.write('Histórico de Confrontos Filtrado:')
+            st.markdown(df_filtrado_historico.drop(columns=[0,1,2]).style.hide(axis='index').to_html(), unsafe_allow_html=True)
 
-    # Exibir tabela de histórico filtrada e sem índice
-    with col1:
-        st.write('Histórico de Confrontos Filtrado:')
-        st.markdown(df_filtrado_historico.style.hide(axis='index').to_html(), unsafe_allow_html=True)
+        with col2:
+            st.write('Valores de Probabilidade:')
+            if not df_filtrado_prob_max.empty:
+                empate = df_filtrado_prob_max[0].values[0] * 100
+                vitoria_mandante = df_filtrado_prob_max[1].values[0] * 100
+                vitoria_visitante = df_filtrado_prob_max[2].values[0] * 100
 
-    with col2:
-        st.write('Valores de Probabilidade:')
-        if not df_filtrado_prob.empty:
-            empate = df_filtrado_prob[0].values[0] * 100
-            vitoria_mandante = df_filtrado_prob[1].values[0] * 100
-            vitoria_visitante = df_filtrado_prob[2].values[0] * 100
-
-            st.write(f"Empate: {empate:.2f}%")
-            st.write(f"Vitória do {mandante}: {vitoria_mandante:.2f}%")
-            st.write(f"Vitória do {visitante}: {vitoria_visitante:.2f}%")
-        else:
-            st.write('Não há dados suficientes em df_prob para mostrar os valores das colunas 0, 1 e 2.')
+                st.write(f"Empate: {empate:.2f}%")
+                st.write(f"Vitória do {mandante}: {vitoria_mandante:.2f}%")
+                st.write(f"Vitória do {visitante}: {vitoria_visitante:.2f}%")
+            else:
+                st.write('Não há dados suficientes para mostrar os valores das colunas 0, 1 e 2.')
 
 with abas[2]:
-    st.header("Dados dos Jogadores")
+    st.header("Dados Jogadores")
     
     # Adiciona um seletor de clube
     clubes = ["Todos"] + dados_footstats['Equipe'].unique().tolist()
-    clube_selecionado = st.selectbox("Selecione o clube", clubes)
+    clube_selecionado = st.selectbox("Selecione o clube",sorted(clubes))
     
     # Filtra os dados com base na seleção do clube
     df_filtrado = filtrar_dados_por_clube(dados_footstats, clube_selecionado)
@@ -438,11 +452,11 @@ with abas[2]:
         st.plotly_chart(fig_Cartão_vermelho,use_container_width= True)
 
     with col2:
+        st.plotly_chart(fig_Virada_certa,use_container_width= True)
         st.plotly_chart(fig_Passe,use_container_width= True)
         st.plotly_chart(fig_Finalizacao_certa,use_container_width= True)
         st.plotly_chart(fig_Cruzamento_certo,use_container_width= True)
         st.plotly_chart(fig_Drible_certo,use_container_width= True)
-        st.plotly_chart(fig_Virada_certa,use_container_width= True)
         st.plotly_chart(fig_Gols,use_container_width= True)
         st.plotly_chart(fig_Assistência_finalização,use_container_width= True)
         st.plotly_chart(fig_Defesa_difícil,use_container_width= True)
@@ -455,13 +469,13 @@ with abas[3]:
 
     
     # Criar um filtro para o clube
-    clube = st.selectbox("Selecione o Clube:", dados_footstats['Equipe'].unique())
+    clube = st.selectbox("Selecione o Clube:", sorted(dados_footstats['Equipe'].unique()))
 
 # Filtrar os dados pelo clube selecionado
     dados_clube = dados_footstats[dados_footstats['Equipe'] == clube]
 
 # Agora, criar um seletor de jogador baseado no filtro do clube
-    jogador = st.selectbox("Selecione o Jogador:", dados_clube['Jogador'].unique())
+    jogador = st.selectbox("Selecione o Jogador:", sorted(dados_clube['Jogador'].unique()))
     
 
     # Se o usuário selecionou um jogador e um clube, executa a função `top10_`
@@ -513,10 +527,19 @@ with abas[4]:
     st.plotly_chart(fig)
 
     # Filtrar os dados pelo clube selecionado
-    clube_selecionado = st.selectbox("Selecione o Clube:", hist['Time'].unique())
+    clube_selecionado = st.selectbox("Selecione o Clube:", sorted(hist['Time'].unique()))
 
     # Filtrar os dados pelo clube selecionado
     dados_clube = hist[hist['Time'] == clube_selecionado]
+
+    # Juntar as tabelas hist e escudo pela coluna 'sigla' e selecionar a coluna do link do escudo
+    df_merged = pd.merge(dados_clube, escudo[['Sigla', escudo.columns[-1]]], on='Sigla')
+
+    # Exibir o escudo do clube
+    if not df_merged.empty:
+        escudo_link = df_merged[escudo.columns[-1]].iloc[0]
+        st.image(escudo_link, width=100, caption=clube_selecionado)
+
 
     # Gráfico de linha para mostrar a posição do clube ao longo das temporadas
     fig_posicao = px.line(dados_clube, x='season', y='Posição', title=f'Posição do {clube_selecionado} ao Longo das Temporadas')
