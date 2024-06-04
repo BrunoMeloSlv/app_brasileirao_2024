@@ -15,7 +15,12 @@ from sklearn.cluster import KMeans
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
 import matplotlib.pyplot as plt
-
+import seaborn as sns # biblioteca de visualização de informações estatísticas
+import statsmodels.api as sm # biblioteca de modelagem estatística
+from scipy import stats # estatística chi2
+from statsmodels.iolib.summary2 import summary_col # comparação entre modelos
+from scipy.stats import pearsonr # correlações de Pearson
+import statsmodels.formula.api as smf # estimação de modelos
 
 # Configuração da página
 st.set_page_config(layout='wide')
@@ -29,6 +34,16 @@ dados_multinomial = dados_multinomial[1:]
 
 ### Historico Brasileiraõ
 hist = pd.read_csv('brasileirao.csv')
+
+reg_hist = hist.copy()
+
+reg_hist['pontos'] = reg_hist['points']/reg_hist['played']
+reg_hist['vitorias'] = reg_hist['won']/reg_hist['played']
+reg_hist['empates'] = reg_hist['draw']/reg_hist['played']
+reg_hist['derrotas'] = reg_hist['loss']/reg_hist['played']
+reg_hist['gols_pro'] = reg_hist['goals_for']/reg_hist['played']
+reg_hist['gols_contra'] = reg_hist['goals_against']/reg_hist['played']
+reg_hist.drop(columns=['played','won','draw','loss','goals_for','goals_against','goals_diff'], inplace= True)
 
 hist.rename(
     columns={
@@ -89,20 +104,51 @@ tabela_brasileirao.rename(
     }, inplace=True
 )
 
-df = tabela_brasileirao.iloc[:, 0:14]
+tabela_brasileirao = tabela_brasileirao.iloc[:, 0:14]
 
-colunas = list(df.columns)
+colunas = list(tabela_brasileirao.columns)
 colunas.insert(2, colunas.pop(colunas.index('Pontos')))
-df = df[colunas]
+tabela_brasileirao = tabela_brasileirao[colunas]
 
-df['Aproveitamento'] = ((df['Pontos'] / (df['Jogos'] * 3)) * 100).round(2)
+tabela_brasileirao['Aproveitamento'] = ((tabela_brasileirao['Pontos'] / (tabela_brasileirao['Jogos'] * 3)) * 100).round(2)
+
+
 
 col = ['mandante', 'visitante', 'vencedor', 'Temporada',0,1,2,]
 df_prev = dados_multinomial[col]
 #col_prob = ['mandante', 'visitante',0,1,2,'Temporada']
 #df_prob = dados_multinomial[col_prob]
 
+### Regressão
 
+
+
+modelo = sm.OLS.from_formula('points ~ pontos + vitorias + empates + derrotas + gols_pro + gols_contra',
+                         data=reg_hist).fit()
+
+reg_hist['pontosfit'] = modelo.fittedvalues
+
+reg_tabela_brasileirao = tabela_brasileirao.copy()
+
+reg_tabela_brasileirao['pontos'] = reg_tabela_brasileirao['Pontos']/reg_tabela_brasileirao['Jogos']
+reg_tabela_brasileirao['vitorias'] = reg_tabela_brasileirao['Vitórias']/reg_tabela_brasileirao['Jogos']
+reg_tabela_brasileirao['empates'] = reg_tabela_brasileirao['Empates']/reg_tabela_brasileirao['Jogos']
+reg_tabela_brasileirao['derrotas'] = reg_tabela_brasileirao['Derrotas']/reg_tabela_brasileirao['Jogos']
+reg_tabela_brasileirao['gols_pro'] = reg_tabela_brasileirao['Gols Pró']/reg_tabela_brasileirao['Jogos']
+reg_tabela_brasileirao['gols_contra'] = reg_tabela_brasileirao['Gols Contra']/reg_tabela_brasileirao['Jogos']
+tabelabr = reg_tabela_brasileirao.copy()
+tabelabr.drop(columns=['Pontos','Time','Posição','Jogos','Vitórias','Empates','Derrotas','Gols Pró','Gols Contra','xG','xGA','xGD','Pontos por partida','Saldo de Gols'], inplace= True)
+predicoes_treino = modelo.predict(tabelabr)
+
+tabela_brasileirao['Previsão'] = predicoes_treino
+def ajustar_previsoes(valor):
+    if valor < 0:
+        return 0
+    else:
+        return valor
+
+# Aplicando a função à coluna 'previsoes'
+tabela_brasileirao['Previsão'] = tabela_brasileirao['Previsão'].apply(ajustar_previsoes)
 
 ### AHP
 
@@ -220,6 +266,7 @@ def top10_(jogador, clube):
 
     melhores_escolhas = pd.concat([soma, jogador_equipe], axis=1)
     melhores_escolhas = melhores_escolhas.sort_values(by='soma', ascending=False)
+    melhores_escolhas.rename(columns={'soma':'AHP Gaussiano'}, inplace= True)
     melhores_escolhas = melhores_escolhas.reset_index(drop=True)
 
     return melhores_escolhas
@@ -258,9 +305,16 @@ abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Clubes","T
 # Primeira aba: Classificação
 with abas[0]:
     st.header("Classificação do Campeonato de Futebol")
+
+    tabela_brasileirao['Pontos por partida'] = tabela_brasileirao['Pontos por partida'].astype(float).map("{:.2f}".format)
+    tabela_brasileirao['xG'] = tabela_brasileirao['xG'].astype(float).map("{:.2f}".format)
+    tabela_brasileirao['xGA'] = tabela_brasileirao['xGA'].astype(float).map("{:.2f}".format)
+    tabela_brasileirao['xGD'] = tabela_brasileirao['xGD'].astype(float).map("{:.2f}".format)
+    tabela_brasileirao['Aproveitamento'] = tabela_brasileirao['Aproveitamento'].astype(float).map("{:.2f}".format)
+    tabela_brasileirao['Previsão'] = tabela_brasileirao['Previsão'].astype(float).map("{:.0f}".format)
     
     # Exibir tabela de classificação com estilos personalizados e sem índice
-    st.markdown(aplicar_estilos(df).hide(axis='index').to_html(), unsafe_allow_html=True)
+    st.markdown(aplicar_estilos(tabela_brasileirao).hide(axis='index').to_html(), unsafe_allow_html=True)
 
 # Segunda aba: Probabilidade
 with abas[1]:
