@@ -21,6 +21,9 @@ from scipy import stats # estatística chi2
 from statsmodels.iolib.summary2 import summary_col # comparação entre modelos
 from scipy.stats import pearsonr # correlações de Pearson
 import statsmodels.formula.api as smf # estimação de modelos
+import requests
+from bs4 import BeautifulSoup
+from sklearn.impute import SimpleImputer
 
 # Configuração da página
 st.set_page_config(layout='wide')
@@ -119,6 +122,120 @@ df_prev = dados_multinomial[col]
 #col_prob = ['mandante', 'visitante',0,1,2,'Temporada']
 #df_prob = dados_multinomial[col_prob]
 
+#### Valor de mercado 
+# Lista de tuplas contendo (nome do clube, URL) dos times da Série A do Brasileirão 2024 no Transfermarkt
+transfermarket = pd.read_excel('dados_transfermarkt_serie_a_2024.xlsx')
+
+
+def get_exchange_rate(api_key, base_currency='EUR', target_currency='BRL'):
+    url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/{base_currency}"
+    response = requests.get(url)
+    data = response.json()
+    
+    if response.status_code != 200 or 'error' in data:
+        print(f"Erro ao obter a taxa de câmbio: {data.get('error', 'Unknown error')}")
+        return None
+    exchange_rate = data['conversion_rates'][target_currency]
+    return exchange_rate
+
+def convert_currency(amount, exchange_rate):
+    return amount * exchange_rate
+
+# Substitua pelo seu API Key
+api_key = "a329da6b8195b6754616929a"
+
+# Obter a taxa de câmbio EUR/BRL
+exchange_rate = get_exchange_rate(api_key)
+
+if exchange_rate:
+    # Exemplo de conversão
+    euros = 1  # valor em euros
+    reais = convert_currency(euros, exchange_rate)
+    
+
+
+# Supondo que a coluna 'Valor de Mercado' contenha os valores em formato de string com o símbolo do euro
+transfermarket['Valor de Mercado'] = transfermarket['Valor de Mercado'].str.replace('€', '').str.replace('mi.', '0000').str.replace('K', '0').str.replace(',', '').str.replace(' ', '')
+transfermarket['Valor de Mercado'] = pd.to_numeric(transfermarket['Valor de Mercado'], errors='coerce')
+
+# Agora, podemos multiplicar os valores da coluna 'Valor de Mercado' pelo valor em reais
+transfermarket['Valor em Reais'] = transfermarket['Valor de Mercado'] * reais
+
+
+
+# Obter a taxa de câmbio EUR/BRL
+exchange_rate = get_exchange_rate(api_key)
+
+transfermarket.rename( columns={'Clube':'Equipe','Nome do Jogador':'Jogador'}, inplace=True)
+
+# Chaves de relacionamento
+chaves = ['Equipe', 'Jogador']
+
+# Junção dos DataFrames usando as chaves de relacionamento
+dados_footstats = pd.merge(dados_footstats, transfermarket, on=chaves)
+
+# Função para selecionar o melhor jogador por posição
+def selecionar_melhor_jogador(df, posicao, criterios):
+    # Verificar se a coluna 'Posição' existe no DataFrame
+    if 'Posição' not in df.columns:
+        print("Aviso: A coluna 'Posição' não está presente no DataFrame. Não é possível selecionar os melhores jogadores.")
+        return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Filtrar jogadores pela posição
+    jogadores_posicao = df[df['Posição'] == posicao]
+    
+    # Verificar se os critérios existem no DataFrame
+    for criterio in criterios:
+        if criterio not in df.columns:
+            print(f"Aviso: A coluna '{criterio}' não está presente no DataFrame. Não é possível calcular a pontuação.")
+            return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Verificar se há jogadores disponíveis para essa posição
+    if jogadores_posicao.empty:
+        print(f"Aviso: Não há jogadores disponíveis para a posição '{posicao}'.")
+        return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Calcular a pontuação
+    jogadores_posicao['Pontuação'] = jogadores_posicao[criterios].sum(axis=1)
+    
+    # Selecionar os dois jogadores com a maior pontuação (para zagueiros e meias)
+    if posicao in ['Zagueiro', 'Meia Ofensivo']:
+        melhores_jogadores = jogadores_posicao.nlargest(2, 'Pontuação')
+    else:
+        melhores_jogadores = jogadores_posicao.nlargest(1, 'Pontuação')
+    
+    return melhores_jogadores
+
+# Seleção do campeonato
+selecao = pd.DataFrame()
+
+# Defina os critérios de pontuação por posição
+criterios_por_posicao = {
+    'Centroavante': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Dribles'],
+    'Ponta Esquerda': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+    'Ponta Direita': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+    'Meia Ofensivo': ['Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo'],
+    'Meio Central': ['Assistência finalização', 'Passe certo', 'Assistência gol', 'Interceptação certa', 'Finalização certa'],
+    'Volante': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
+    'Lateral Esq.': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
+    'Lateral Dir.': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
+    'Zagueiro': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
+    'Goleiro': ['Rebatida', 'Defesa', 'Passe certo', 'Defesa difícil']  
+}
+
+for posicao, criterios in criterios_por_posicao.items():
+    try:
+        melhor_jogador = selecionar_melhor_jogador(dados_footstats, posicao, criterios)
+        if not melhor_jogador.empty:
+            selecao = pd.concat([selecao, melhor_jogador], ignore_index=True)
+    except KeyError as e:
+        print(f"Erro: {e}")
+
+# Remova a coluna de pontuação antes de salvar
+if 'Pontuação' in selecao.columns:
+    selecao = selecao.drop(columns=['Pontuação'])
+
+
 ### Regressão
 
 
@@ -159,7 +276,7 @@ def top10_(jogador, clube):
     df_cluster2 = df_cluster2[df_cluster2['Jogos'] != 0]
 
     df_cluster_a_padronizar = df_cluster2.copy()
-    df_cluster_a_padronizar.drop(columns=['Equipe', 'Jogador'], inplace=True)
+    df_cluster_a_padronizar.drop(columns=['Equipe', 'Jogador','Posição','Idade'], inplace=True)
 
     # Converter nomes das colunas para strings
     df_cluster_a_padronizar.columns = df_cluster_a_padronizar.columns.astype(str)
@@ -169,6 +286,9 @@ def top10_(jogador, clube):
 
     # Converter para o formato de tabela - StandardScaler 
     df_cluster_padronizado = pd.DataFrame(data=df_cluster_padronizado, columns=df_cluster_a_padronizar.columns)
+    
+    # Preencher valores NaN com zero
+    df_cluster_padronizado.fillna(0, inplace=True)
     
     pca = PCA(n_components=4, random_state=1224)
     df_cluster_pca_atacante = pca.fit_transform(df_cluster_padronizado)
@@ -204,7 +324,7 @@ def top10_(jogador, clube):
                                'Rebatida', 'Falta recebida', 'Lançamento certo']]
 
     negativos = recomendado[['Falta cometida', 'Perda da posse de bola', 'Finalização errada', 'Cruzamento errado',
-                             'Passe errado', 'Lançamento errado', 'Interceptação errada', 'Drible errado', 'Virada de jogo errada']]
+                             'Passe errado', 'Lançamento errado', 'Interceptação errada', 'Drible errado', 'Virada de jogo errada','Valor de Mercado']]
 
     colunas = recomendado[list(positivos.columns)]
 
@@ -268,6 +388,12 @@ def top10_(jogador, clube):
     melhores_escolhas = melhores_escolhas.sort_values(by='soma', ascending=False)
     melhores_escolhas.rename(columns={'soma':'AHP Gaussiano'}, inplace= True)
     melhores_escolhas = melhores_escolhas.reset_index(drop=True)
+    # Chaves de relacionamento
+    chaves = ['Equipe', 'Jogador']
+
+  # Realizar a junção dos DataFrames usando as chaves de relacionamento
+    melhores_escolhas = pd.merge(melhores_escolhas, dados_footstats[['Equipe', 'Jogador', 'Valor em Reais']], on=chaves)
+
 
     return melhores_escolhas
 
@@ -300,7 +426,7 @@ def filtrar_dados_por_clube(dados_footstats, clube_selecionado):
 st.title('Dashboard Brasileirão 2024 ⚽')
 
 # Criar abas
-abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Clubes","Top 10 Jogadores Semelhantes","Histórico"])
+abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Jogadores","Top 10 Jogadores Semelhantes","Histórico","Seleção do Campeonato"])
 
 # Primeira aba: Classificação
 with abas[0]:
@@ -536,6 +662,7 @@ with abas[3]:
     if (jogador != '') & (clube != ''):
         resultado = top10_(jogador, clube)
     st.dataframe(resultado)
+    
 
 with abas[4]:
 
@@ -625,8 +752,72 @@ with abas[4]:
     col2.plotly_chart(fig_percentual)
     col2.plotly_chart(fig_gols)
 
+# Primeira aba: Classificação
+with abas[5]:
+    # Separando a idade do ano de nascimento
+    selecao['Ano de Nascimento'] = selecao['Idade'].apply(lambda x: x.split(' ')[0])
+    selecao['Idade'] = selecao['Idade'].apply(lambda x: x.split(' ')[1].strip('()'))
+
+    # Formatando o valor de mercado como dinheiro
+    selecao['Valor em Reais'] = selecao['Valor em Reais'].apply(lambda x: f"R${x:,.2f}" if pd.notna(x) else 'N/A')
+
+    # Reordenando as colunas
+    selecao = selecao[['Equipe', 'Jogador', 'Jogos', 'Posição', 'Idade', 'Valor em Reais']]
+
+    # Convertendo o DataFrame para HTML com estilo
+    html_table = selecao.to_html(index=False, justify='center', border=0, classes='styled-table')
+
+    # Definindo estilo CSS
+    css = """
+        <style>
+        .styled-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            font-size: 0.9em;
+            font-family: 'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', 'Lucida Sans', 'Arial', 'sans-serif';
+            min-width: 400px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+        }
+        .styled-table thead tr {
+            background-color: #023047;
+            color: #ffffff;
+            text-align: left;
+        }
+        .styled-table th,
+        .styled-table td {
+            padding: 12px 15px;
+        }
+        .styled-table tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+        .styled-table tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+        .styled-table tbody tr:last-of-type {
+            border-bottom: 2px solid #023047;
+        }
+        .styled-table tbody tr.active-row {
+            font-weight: bold;
+            color: #023047;
+        }
+        </style>
+    """
+
+    # Convertendo o dicionário para um DataFrame
+    criterios_df = pd.DataFrame(dict([(k, pd.Series(v)) for k,v in criterios_por_posicao.items()])).T
+    criterios_df = criterios_df.reset_index()
+    criterios_df.columns = ['Posição', 'Critério 1', 'Critério 2', 'Critério 3', 'Critério 4', 'Critério 5', 'Critério 6', 'Critério 7']
+
+    # Convertendo o DataFrame de critérios para HTML com estilo
+    html_criterios = criterios_df.to_html(index=False, justify='center', border=0, classes='styled-table')
 
 
+# Exibindo a tabela estilizada no Streamlit
 
+    #st.header("Seleção do Campeonato de Futebol")
 
+    # Renderizando a tabela estilizada no Streamlit
+    st.markdown("<h2>Seleção do Campeonato de Futebol</h2>" + css + html_table, unsafe_allow_html=True)
 
+    st.markdown("<h2>Critérios por Posição</h2>" + css + html_criterios, unsafe_allow_html=True)
