@@ -139,17 +139,17 @@ def convert_currency(amount, exchange_rate):
     return amount * exchange_rate
 
 # Substitua pelo seu API Key
-api_key = "a329da6b8195b6754616929a"
+#api_key = "a329da6b8195b6754616929a"
 
 # Obter a taxa de câmbio EUR/BRL
-exchange_rate = get_exchange_rate(api_key)
+#exchange_rate = get_exchange_rate(api_key)
 
-if exchange_rate:
+#if exchange_rate:
     # Exemplo de conversão
-    euros = 1  # valor em euros
-    reais = convert_currency(euros, exchange_rate)
+#    euros = 1  # valor em euros
+#    reais = convert_currency(euros, exchange_rate)
     
-
+reais = 5.78
 
 # Supondo que a coluna 'Valor de Mercado' contenha os valores em formato de string com o símbolo do euro
 transfermarket['Valor de Mercado'] = transfermarket['Valor de Mercado'].str.replace('€', '').str.replace('mi.', '0000').str.replace('K', '0').str.replace(',', '').str.replace(' ', '')
@@ -161,7 +161,7 @@ transfermarket['Valor em Reais'] = transfermarket['Valor de Mercado'] * reais
 
 
 # Obter a taxa de câmbio EUR/BRL
-exchange_rate = get_exchange_rate(api_key)
+#exchange_rate = get_exchange_rate(api_key)
 
 transfermarket.rename( columns={'Clube':'Equipe','Nome do Jogador':'Jogador'}, inplace=True)
 
