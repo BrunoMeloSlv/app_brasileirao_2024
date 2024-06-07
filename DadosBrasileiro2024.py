@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd #pandas==2.0.2
 import plotly.express as px #plotly==5.15.0
 import openpyxl as op
-from factor_analyzer import FactorAnalyzer
 from factor_analyzer.factor_analyzer import calculate_bartlett_sphericity
 from factor_analyzer.factor_analyzer import calculate_kmo
 from sklearn.preprocessing import StandardScaler
@@ -14,16 +13,14 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
-import matplotlib.pyplot as plt
-import seaborn as sns # biblioteca de visualização de informações estatísticas
 import statsmodels.api as sm # biblioteca de modelagem estatística
-from scipy import stats # estatística chi2
 from statsmodels.iolib.summary2 import summary_col # comparação entre modelos
 from scipy.stats import pearsonr # correlações de Pearson
 import statsmodels.formula.api as smf # estimação de modelos
 import requests
-from bs4 import BeautifulSoup
-from sklearn.impute import SimpleImputer
+import plotly.graph_objs as go
+
+
 
 # Configuração da página
 st.set_page_config(layout='wide')
@@ -393,8 +390,10 @@ def top10_(jogador, clube):
 
   # Realizar a junção dos DataFrames usando as chaves de relacionamento
     melhores_escolhas = pd.merge(melhores_escolhas, dados_footstats[['Equipe', 'Jogador', 'Valor em Reais']], on=chaves)
+    # Formatando o valor de mercado como dinheiro
+    melhores_escolhas['Valor em Reais'] = melhores_escolhas['Valor em Reais'].apply(lambda x: f"R${x:,.2f}" if pd.notna(x) else 'N/A')
 
-
+    
     return melhores_escolhas
 
 # Função para aplicar estilos personalizados
@@ -426,7 +425,7 @@ def filtrar_dados_por_clube(dados_footstats, clube_selecionado):
 st.title('Dashboard Brasileirão 2024 ⚽')
 
 # Criar abas
-abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Jogadores","Top 10 Jogadores Semelhantes","Histórico","Seleção do Campeonato"])
+abas = st.tabs(["Classificação","Probabilidade", "Estatísticas dos Jogadores","Top 10 Jogadores Semelhantes","Histórico","Seleção do Campeonato","Relatório Clube"])
 
 # Primeira aba: Classificação
 with abas[0]:
@@ -444,6 +443,24 @@ with abas[0]:
 
 # Segunda aba: Probabilidade
 with abas[1]:
+    # Texto sobre a regressão multinomial
+    with st.expander("Sobre a Regressão Multinomial"):
+        st.write("""
+        A regressão multinomial é uma extensão da regressão logística que permite modelar e prever variáveis dependentes categóricas com mais de duas categorias. Enquanto a regressão logística é adequada para prever variáveis dependentes binárias (duas categorias), a regressão multinomial pode lidar com variáveis dependentes com três ou mais categorias.
+
+        Na regressão multinomial, o objetivo é prever a probabilidade de cada categoria da variável dependente, condicionada às variáveis independentes. Isso é feito através da estimativa de coeficientes para cada categoria da variável dependente em relação a uma categoria de referência (ou baseline).
+
+        O modelo de regressão multinomial estima múltiplas equações logísticas simultaneamente, uma para cada categoria da variável dependente. Cada equação logística compara uma categoria específica com a categoria de referência, usando uma função logit para modelar a relação entre as variáveis independentes e a probabilidade de pertencer a uma categoria em particular.
+
+        A interpretação dos coeficientes na regressão multinomial é semelhante à da regressão logística. Eles representam o efeito das variáveis independentes nas probabilidades relativas de pertencer a uma categoria específica em comparação com a categoria de referência.
+        
+        Este conjunto de dados utiliza exclusivamente informações do Campeonato Brasileiro de Futebol no período de 2003 a 2023 para gerar as probabilidades exibidas. 
+        Por esse motivo, é importante ressaltar que as probabilidades calculadas aqui podem ser significativamente diferentes das odds oferecidas por casas de apostas. 
+        As probabilidades geradas são baseadas em estatísticas históricas e modelos estatísticos aplicados a esses dados específicos, e não refletem necessariamente as probabilidades reais no momento da análise. 
+        Portanto, ao tomar decisões de apostas, é recomendável considerar várias fontes de informações, incluindo análises recentes, notícias sobre os times e eventos atuais do futebol.
+        
+                 """)
+
     st.header("Histórico de Confrontos")
 
     # Selecionar o time mandante
@@ -491,6 +508,7 @@ with abas[1]:
 
 with abas[2]:
     st.header("Dados Jogadores")
+
     
     # Adiciona um seletor de clube
     clubes = ["Todos"] + dados_footstats['Equipe'].unique().tolist()
@@ -498,6 +516,7 @@ with abas[2]:
     
     # Filtra os dados com base na seleção do clube
     df_filtrado = filtrar_dados_por_clube(dados_footstats, clube_selecionado)
+
     
     col1, col2 = st.columns(2)
     with col1:
@@ -645,6 +664,14 @@ with abas[2]:
         st.plotly_chart(fig_Cartão_amarelo,use_container_width= True)
 
 with abas[3]:
+
+    with st.expander("Sobre o AHP-Gaussiano"):
+        st.write("""
+        O AHP-Gaussiano é uma técnica de tomada de decisão multicritério que combina o método Analytic Hierarchy Process (AHP) com a distribuição gaussiana. O AHP é um método usado para lidar com problemas de decisão que envolvem múltiplos critérios e alternativas.
+
+        O AHP-Gaussiano estende o AHP tradicional para lidar com incertezas e imprecisões nos julgamentos dos tomadores de decisão. Ele introduz uma função de distribuição gaussiana para modelar a incerteza associada às avaliações de julgamento. Isso permite que o método lide com situações em que os julgamentos dos especialistas podem não ser precisos ou podem variar.
+        """)
+
     st.header("Top 10 Jogadores Similares")
 
     
@@ -656,6 +683,8 @@ with abas[3]:
 
 # Agora, criar um seletor de jogador baseado no filtro do clube
     jogador = st.selectbox("Selecione o Jogador:", sorted(dados_clube['Jogador'].unique()))
+
+    
     
 
     # Se o usuário selecionou um jogador e um clube, executa a função `top10_`
@@ -665,6 +694,11 @@ with abas[3]:
     
 
 with abas[4]:
+    # Texto sobre o conjunto de dados
+    with st.expander("Sobre o Conjunto de Dados"):
+        st.write("""
+        Este conjunto de dados utiliza exclusivamente informações do Campeonato Brasileiro de Futebol no período de 2003 a 2023. 
+        """)
 
    # Filtrar os dados onde 'Posição' é igual a 1
     times_campeoes = hist[hist['Posição'] == 1]
@@ -707,50 +741,7 @@ with abas[4]:
     st.table(hist_filtrado)
     st.plotly_chart(fig)
 
-    # Filtrar os dados pelo clube selecionado
-    clube_selecionado = st.selectbox("Selecione o Clube:", sorted(hist['Time'].unique()))
-
-    # Filtrar os dados pelo clube selecionado
-    dados_clube = hist[hist['Time'] == clube_selecionado]
-
-    # Juntar as tabelas hist e escudo pela coluna 'sigla' e selecionar a coluna do link do escudo
-    df_merged = pd.merge(dados_clube, escudo[['Sigla', escudo.columns[-1]]], on='Sigla')
-
-    # Exibir o escudo do clube
-    if not df_merged.empty:
-        escudo_link = df_merged[escudo.columns[-1]].iloc[0]
-        st.image(escudo_link, width=100, caption=clube_selecionado)
-
-
-    # Gráfico de linha para mostrar a posição do clube ao longo das temporadas
-    fig_posicao = px.line(dados_clube, x='season', y='Posição', title=f'Posição do {clube_selecionado} ao Longo das Temporadas')
-
-    # Calcular o número e percentual de vitórias, empates e derrotas
-    dados_clube_agrupados = dados_clube.groupby('season').agg({'Vitórias':'sum', 'Empates':'sum', 'Derrotas':'sum'})
-    dados_clube_agrupados = calcular_percentual(dados_clube_agrupados)
-
-    # Gráfico de barra para mostrar o número de vitórias, empates e derrotas
-    fig_resultados = px.bar(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Vitórias', 'Empates', 'Derrotas'], 
-                            title=f'Número de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
-
-    # Gráfico de linha para mostrar o percentual de vitórias, empates e derrotas
-    fig_percentual = px.line(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Percentual_vitórias', 'Percentual_empates', 'Percentual_derrotas'], 
-                            title=f'Percentual de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
-
-    # Gráfico de barras para mostrar a quantidade de gols pró e gols contra
-    fig_gols = px.bar(dados_clube, x='season', y=['Gols Pró', 'Gols Contra'], 
-                    title=f'Quantidade de Gols Pró e Contra do {clube_selecionado} por Temporada')
     
-    # Organizar os gráficos em duas colunas
-    col1, col2 = st.columns(2)
-
-    # Exibir os gráficos na primeira coluna
-    col1.plotly_chart(fig_posicao)
-    col1.plotly_chart(fig_resultados)
-
-    # Exibir os gráficos na segunda coluna
-    col2.plotly_chart(fig_percentual)
-    col2.plotly_chart(fig_gols)
 
 # Primeira aba: Classificação
 with abas[5]:
@@ -763,7 +754,7 @@ with abas[5]:
 
     # Reordenando as colunas
     selecao = selecao[['Equipe', 'Jogador', 'Jogos', 'Posição', 'Idade', 'Valor em Reais']]
-
+    
     # Convertendo o DataFrame para HTML com estilo
     html_table = selecao.to_html(index=False, justify='center', border=0, classes='styled-table')
 
@@ -821,3 +812,234 @@ with abas[5]:
     st.markdown("<h2>Seleção do Campeonato de Futebol</h2>" + css + html_table, unsafe_allow_html=True)
 
     st.markdown("<h2>Critérios por Posição</h2>" + css + html_criterios, unsafe_allow_html=True)
+
+with abas[6]:
+    st.header("Relatório do Clube")
+
+    # Dicionário de mapeamento para padronizar os nomes dos clubes
+    mapeamento_clubes = {
+        'flamengo': 'Flamengo',
+        'flamengo': 'Flamengo',
+        'Flamengo': 'Flamengo',
+        'Flamengo': 'Flamengo',
+        'bahia': 'Bahia',
+        'bahia': 'Bahia',
+        'bahia': 'Bahia',
+        'Bahia': 'Bahia',
+        'botafogo-rj': 'Botafogo',
+        'botafogo-rj': 'Botafogo',
+        'botafogo': 'Botafogo',
+        'Botafogo': 'Botafogo',
+        'sao paulo': 'São Paulo',
+        'sao paulo': 'São Paulo',
+        'sao-paulo': 'São Paulo',
+        'SaoPaulo': 'São Paulo',
+        'athletico-pr': 'Ath Paranaense',
+        'athletico-pr': 'Ath Paranaense',
+        'athletico-pr': 'Ath Paranaense',
+        'Athletico-PR': 'Ath Paranaense',
+        'bragantino': 'Red Bull Bragantino',
+        'bragantino': 'Red Bull Bragantino',
+        'bragantino': 'Red Bull Bragantino',
+        'RBBragantino': 'Red Bull Bragantino',
+        'palmeiras': 'Palmeiras',
+        'palmeiras': 'Palmeiras',
+        'palmeiras': 'Palmeiras',
+        'Palmeiras': 'Palmeiras',
+        'internacional': 'Internacional',
+        'internacional': 'Internacional',
+        'internacional': 'Internacional',
+        'Internacional': 'Internacional',
+        'cruzeiro': 'Cruzeiro',
+        'cruzeiro': 'Cruzeiro',
+        'cruzeiro': 'Cruzeiro',
+        'Cruzeiro': 'Cruzeiro',
+        'atletico-mg': 'Atlético Mineiro',
+        'atletico-mg': 'Atlético Mineiro',
+        'atletico-mg': 'Atlético Mineiro',
+        'Atletico-MG': 'Atlético Mineiro',
+        'fortaleza': 'Fortaleza',
+        'fortaleza': 'Fortaleza',
+        'fortaleza': 'Fortaleza',
+        'Fortaleza': 'Fortaleza',
+        'juventude': 'Juventude',
+        'juventude': 'Juventude',
+        'juventude': 'Juventude',
+        'Juventude': 'Juventude',
+        'gremio': 'Grêmio',
+        'gremio': 'Grêmio',
+        'gremio': 'Grêmio',
+        'Gremio': 'Grêmio',
+        'vasco': 'Vasco da Gama',
+        'vasco': 'Vasco da Gama',
+        'vasco': 'Vasco da Gama',
+        'Vasco': 'Vasco da Gama',
+        'fluminense': 'Fluminense',
+        'fluminense': 'Fluminense',
+        'fluminense': 'Fluminense',
+        'Fluminense': 'Fluminense',
+        'criciuma': 'Criciúma',
+        'criciuma': 'Criciúma',
+        'criciuma': 'Criciúma',
+        'Criciuma': 'Criciúma',
+        'corinthians': 'Corinthians',
+        'corinthians': 'Corinthians',
+        'corinthians': 'Corinthians',
+        'Corinthians': 'Corinthians',
+        'atletico-go': 'Atl Goianiense',
+        'atletico-go': 'Atl Goianiense',
+        'atletico-go': 'Atl Goianiense',
+        'Atletico-GO': 'Atl Goianiense',
+        'vitoria': 'Vitória',
+        'vitoria': 'Vitória',
+        'vitoria': 'Vitória',
+        'Vitoria': 'Vitória',
+        'cuiaba': 'Cuiabá',
+        'cuiaba': 'Cuiabá',
+        'cuiaba': 'Cuiabá',
+        'Cuiaba': 'Cuiabá'
+    }
+
+    # Filtrar os dados pelo clube selecionado
+    clube_selecionado = st.selectbox("Selecione o Clube:", sorted(hist['Time'].unique()))
+
+    # Função para padronizar o nome do clube
+    def padronizar_clube(nome):
+        return mapeamento_clubes.get(nome.lower(), nome)
+
+    tab_br24 = tabela_brasileirao.copy()
+    footstats = dados_footstats.copy()
+
+    # Padronizar os nomes dos clubes no DataFrame
+    tab_br24['Time'] = tab_br24['Time'].apply(padronizar_clube)
+    footstats['Equipe'] = footstats['Equipe'].apply(padronizar_clube)
+
+    footstats.drop(columns=['Jogador'], inplace= True)
+
+    time_passes = pd.DataFrame(footstats.groupby('Equipe')['Passe certo'].sum()).reset_index().sort_values('Passe certo', ascending=False)
+    time_passes_errados = pd.DataFrame(footstats.groupby('Equipe')['Passe errado'].sum()).reset_index().sort_values('Passe errado', ascending=False)
+
+    tab_br24 = tab_br24[tab_br24['Time'] == clube_selecionado]
+
+    colunas = ['Passe certo','Passe errado','Finalização certa','Finalização errada','Cruzamento certo',       'Cruzamento errado',
+              'Lançamento certo',       'Lançamento errado',
+           'Interceptação certa',    'Interceptação errada',
+                       'Dribles',           'Drible errado',
+          'Virada de jogo certa',   'Virada de jogo errada',
+                          'Gols',         'Assistência gol',
+       'Assistência finalização',                  'Defesa',
+                'Defesa difícil',                'Rebatida',
+                'Falta cometida',          'Falta recebida',
+                  'Impedimentos',       'Pênaltis sofridos',
+            'Pênaltis cometidos',  'Perda da posse de bola',
+                'Cartão amarelo',         'Cartão vermelho']
+
+    # Converter as colunas para tipo numérico
+    for coluna in colunas:
+        footstats[coluna] = pd.to_numeric(footstats[coluna], errors='coerce')
+
+    dados_agrupados = pd.DataFrame(footstats.groupby('Equipe')[colunas].sum()).reset_index().sort_values('Passe certo', ascending=False)
+    dados_agrupados = dados_agrupados[dados_agrupados['Equipe'] == clube_selecionado]
+
+    pares_colunas = [
+    ['Passe certo','Passe errado'],
+    ['Finalização certa','Finalização errada'],
+    ['Cruzamento certo','Cruzamento errado'],
+    ['Lançamento certo','Lançamento errado'],
+    ['Interceptação certa','Interceptação errada'],
+    ['Dribles','Drible errado'],
+    ['Virada de jogo certa','Virada de jogo errada'],
+    ['Gols','Assistência gol','Assistência finalização'],
+    ['Defesa','Defesa difícil','Rebatida'],
+    ['Falta cometida','Falta recebida'],
+    ['Cartão amarelo','Cartão vermelho']
+    ]
+
+
+    # Filtrar os dados pelo clube selecionado
+    dados_clube = hist[hist['Time'] == clube_selecionado]
+
+
+    # Juntar as tabelas hist e escudo pela coluna 'sigla' e selecionar a coluna do link do escudo
+    df_merged = pd.merge(dados_clube, escudo[['Sigla', escudo.columns[-1]]], on='Sigla')
+
+    # Exibir o escudo do clube
+    if not df_merged.empty:
+        escudo_link = df_merged[escudo.columns[-1]].iloc[0]
+        st.image(escudo_link, width=100, caption=clube_selecionado)
+    
+    # Exibir tabela de classificação com estilos personalizados e sem índice
+
+    # Verificar se há dados filtrados para o clube selecionado
+    if tab_br24[tab_br24['Time'] == clube_selecionado].shape[0] > 0:
+        st.header("Campeonato atual")
+        st.markdown(aplicar_estilos(tab_br24).hide(axis='index').to_html(), unsafe_allow_html=True)
+    else:
+        st.write("")
+
+    
+    if dados_agrupados[dados_agrupados['Equipe'] == clube_selecionado].shape[0] > 0:
+        st.header("Estatísticas do Brasileirão 2024")
+
+
+        # Organizar os gráficos em colunas duplas
+        col1, col2 = st.columns(2)
+
+       # Para cada par de colunas, criar e exibir o gráfico correspondente
+        for par in pares_colunas:
+            fig = px.bar(dados_agrupados, x='Equipe', y=par, title=', '.join(par), text_auto=True)
+            if pares_colunas.index(par) % 2 == 0:
+                with col1:
+                    st.plotly_chart(fig)
+            else:
+                with col2:
+                    st.plotly_chart(fig, use_container_width=True)
+
+    st.header("Histórico")
+
+    fig_posicao = go.Figure()
+
+    fig_posicao.add_trace(go.Scatter(
+        x=dados_clube['season'], 
+        y=dados_clube['Posição'], 
+        mode='lines+markers',
+        line_shape='hv',
+        name=f'Posição do {clube_selecionado}'
+    ))
+
+    # Inverter o eixo Y
+    fig_posicao.update_yaxes(autorange="reversed")
+
+    # Atualizar o layout do gráfico
+    fig_posicao.update_layout(
+        title=f'Posição do {clube_selecionado} ao Longo das Temporadas',
+        xaxis_title='Temporada',
+        yaxis_title='Posição',
+    )
+
+    # Calcular o número e percentual de vitórias, empates e derrotas
+    dados_clube_agrupados = dados_clube.groupby('season').agg({'Vitórias':'sum', 'Empates':'sum', 'Derrotas':'sum'})
+    dados_clube_agrupados = calcular_percentual(dados_clube_agrupados)
+
+    # Gráfico de barra para mostrar o número de vitórias, empates e derrotas
+    fig_resultados = px.bar(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Vitórias', 'Empates', 'Derrotas'], 
+                            title=f'Número de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
+
+    # Gráfico de linha para mostrar o percentual de vitórias, empates e derrotas
+    fig_percentual = px.line(dados_clube_agrupados, x=dados_clube_agrupados.index, y=['Percentual_vitórias', 'Percentual_empates', 'Percentual_derrotas'], 
+                            title=f'Percentual de Vitórias, Empates e Derrotas do {clube_selecionado} por Temporada')
+
+    # Gráfico de barras para mostrar a quantidade de gols pró e gols contra
+    fig_gols = px.bar(dados_clube, x='season', y=['Gols Pró', 'Gols Contra'], 
+                    title=f'Quantidade de Gols Pró e Contra do {clube_selecionado} por Temporada')
+    
+    # Organizar os gráficos em duas colunas
+    col1, col2 = st.columns(2)
+
+    # Exibir os gráficos na primeira coluna
+    col1.plotly_chart(fig_posicao)
+    col1.plotly_chart(fig_resultados)
+
+    # Exibir os gráficos na segunda coluna
+    col2.plotly_chart(fig_percentual)
+    col2.plotly_chart(fig_gols)
