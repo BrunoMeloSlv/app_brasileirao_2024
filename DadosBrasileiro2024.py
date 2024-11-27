@@ -19,7 +19,7 @@ from scipy.stats import pearsonr # correlações de Pearson
 import statsmodels.formula.api as smf # estimação de modelos
 import requests
 import plotly.graph_objs as go
-
+from ahp_gaussiano import calcular_ahp_gaussiano
 
 
 # Configuração da página
@@ -172,19 +172,25 @@ chaves = ['Equipe', 'Jogador']
 dados_footstats = pd.merge(dados_footstats, transfermarket, on=chaves)
 
 # Função para selecionar o melhor jogador por posição
-def selecionar_melhor_jogador(df, posicao, criterios):
+def selecionar_melhor_jogador(df, posicao, criterios_positivos, criterios_negativos):
     # Verificar se a coluna 'Posição' existe no DataFrame
     if 'Posição' not in df.columns:
-        print("Aviso: A coluna 'Posição' não está presente no DataFrame. Não é possível selecionar os melhores jogadores.")
+        print(f"Aviso: A coluna 'Posição' não está presente no DataFrame. Não é possível selecionar os melhores jogadores para a posição '{posicao}'.")
         return pd.DataFrame()  # Retorna um DataFrame vazio
     
     # Filtrar jogadores pela posição
     jogadores_posicao = df[df['Posição'] == posicao]
     
-    # Verificar se os critérios existem no DataFrame
-    for criterio in criterios:
+    # Verificar se os critérios positivos existem no DataFrame
+    for criterio in criterios_positivos:
         if criterio not in df.columns:
-            print(f"Aviso: A coluna '{criterio}' não está presente no DataFrame. Não é possível calcular a pontuação.")
+            print(f"Aviso: A coluna '{criterio}' não está presente no DataFrame. Não é possível calcular a pontuação positiva para a posição '{posicao}'.")
+            return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Verificar se os critérios negativos existem no DataFrame
+    for criterio in criterios_negativos:
+        if criterio not in df.columns:
+            print(f"Aviso: A coluna '{criterio}' não está presente no DataFrame. Não é possível calcular a pontuação negativa para a posição '{posicao}'.")
             return pd.DataFrame()  # Retorna um DataFrame vazio
     
     # Verificar se há jogadores disponíveis para essa posição
@@ -192,45 +198,116 @@ def selecionar_melhor_jogador(df, posicao, criterios):
         print(f"Aviso: Não há jogadores disponíveis para a posição '{posicao}'.")
         return pd.DataFrame()  # Retorna um DataFrame vazio
     
-    # Calcular a pontuação
-    jogadores_posicao['Pontuação'] = jogadores_posicao[criterios].sum(axis=1)
+    # Selecionar apenas as colunas de critérios positivos e negativos
+    jogadores_selecionados = jogadores_posicao[['Equipe', 'Jogador'] + criterios_positivos + criterios_negativos]
     
-    # Selecionar os dois jogadores com a maior pontuação (para zagueiros e meias)
-    if posicao in ['Zagueiro', 'Meia Ofensivo']:
-        melhores_jogadores = jogadores_posicao.nlargest(2, 'Pontuação')
-    else:
-        melhores_jogadores = jogadores_posicao.nlargest(1, 'Pontuação')
+    # Verificar se há jogadores selecionados para essa posição
+    if jogadores_selecionados.empty:
+        print(f"Aviso: Não há jogadores selecionados para a posição '{posicao}' após filtragem de critérios.")
+        return pd.DataFrame()  # Retorna um DataFrame vazio
     
-    return melhores_jogadores
+    # Separar critérios positivos e negativos para o AHP Gaussiano
+    positivos = jogadores_selecionados[criterios_positivos]
+    negativos = jogadores_selecionados[criterios_negativos]
+    
+    # Verificar se existem dados suficientes para calcular o AHP Gaussiano
+    if positivos.empty or negativos.empty:
+        print(f"Aviso: Não há dados suficientes para calcular AHP Gaussiano para a posição '{posicao}'.")
+        return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Garantir que todas as colunas sejam numéricas e não tenham valores nulos
+    positivos = positivos.apply(pd.to_numeric, errors='coerce').fillna(0)
+    negativos = negativos.apply(pd.to_numeric, errors='coerce').fillna(0)
 
-# Seleção do campeonato
+    # Imprimir a estrutura dos dados antes de chamar a função
+    print(f"Positivos para {posicao}:")
+    print(positivos.head())
+    print(f"Negativos para {posicao}:")
+    print(negativos.head())
+
+    # Calcular AHP Gaussiano para os critérios positivos e negativos
+    try:
+        pontuacao_positiva = calcular_ahp_gaussiano(positivos, negativos)
+    except Exception as e:
+        print(f"Erro ao calcular AHP Gaussiano: {e}")
+        return pd.DataFrame()  # Retorna um DataFrame vazio
+    
+    # Adicionar a pontuação positiva ao DataFrame original dos jogadores
+    jogadores_selecionados['Pontuação Positiva'] = pontuacao_positiva['AHP Gaussiano']
+    
+    # Selecionar os dois jogadores com a maior pontuação positiva (para zagueiros e meias)
+    if posicao in ['Zagueiro', 'Meia Ofensivo']:
+        melhores_jogadores = jogadores_selecionados.nlargest(2, 'Pontuação Positiva')
+    else:
+        melhores_jogadores = jogadores_selecionados.nlargest(1, 'Pontuação Positiva')
+    
+    # Retornar os melhores jogadores com 'Jogador' e 'Equipe' incluídos
+    return melhores_jogadores[['Equipe', 'Jogador'] + criterios_positivos + criterios_negativos + ['Pontuação Positiva']]
+
+
+# Exemplo de como você pode usar a função em seu loop
+
+# Iterar sobre as posições e calcular os melhores jogadores
 selecao = pd.DataFrame()
 
-# Defina os critérios de pontuação por posição
+# Defina os critérios de pontuação por posição (positivos e negativos)
 criterios_por_posicao = {
-    'Centroavante': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Dribles'],
-    'Ponta Esquerda': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
-    'Ponta Direita': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
-    'Meia Ofensivo': ['Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo'],
-    'Meio Central': ['Assistência finalização', 'Passe certo', 'Assistência gol', 'Interceptação certa', 'Finalização certa'],
-    'Volante': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
-    'Lateral Esq.': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
-    'Lateral Dir.': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
-    'Zagueiro': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
-    'Goleiro': ['Rebatida', 'Defesa', 'Passe certo', 'Defesa difícil']  
+    'Centroavante': {
+        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Dribles'],
+        'Negativos': ['Impedimentos','Finalização errada', 'Drible errado','Impedimentos']
+    },
+    'Ponta Esquerda': {
+        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+        'Negativos': ['Lançamento errado', 'Interceptação errada','Perda da posse de bola','Drible errado','Virada de jogo errada','Falta cometida']
+    },
+    'Ponta Direita': {
+        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+        'Negativos': ['Falta cometida', 'Lançamento errado','Perda da posse de bola', 'Finalização errada','Interceptação errada','Passe errado']
+    },
+    'Meia Ofensivo': {
+        'Positivos': ['Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo'],
+        'Negativos': ['Falta cometida', 'Virada de jogo errada','Perda da posse de bola', 'Finalização errada','Passe errado']
+    },
+    'Meia Central': {
+        'Positivos': ['Assistência finalização', 'Passe certo', 'Assistência gol', 'Interceptação certa', 'Finalização certa'],
+        'Negativos': ['Falta cometida', 'Passe errado','Perda da posse de bola', 'Finalização errada']
+    },
+    'Volante': {
+        'Positivos': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
+        'Negativos': ['Falta cometida', 'Passe errado','Perda da posse de bola', 'Finalização errada']
+    },
+    'Lateral Esq.': {
+        'Positivos': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
+        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
+    },
+    'Lateral Dir.': {
+        'Positivos': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
+        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
+    },
+    'Zagueiro': {
+        'Positivos': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
+        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
+    },
+    'Goleiro': {
+        'Positivos': ['Rebatida', 'Defesa', 'Passe certo', 'Defesa difícil'],
+        'Negativos': ['Falta cometida', 'Perda da posse de bola', 'Passe errado']
+    }
 }
 
 for posicao, criterios in criterios_por_posicao.items():
     try:
-        melhor_jogador = selecionar_melhor_jogador(dados_footstats, posicao, criterios)
+        melhor_jogador = selecionar_melhor_jogador(dados_footstats, posicao, criterios['Positivos'], criterios['Negativos'])
         if not melhor_jogador.empty:
             selecao = pd.concat([selecao, melhor_jogador], ignore_index=True)
     except KeyError as e:
         print(f"Erro: {e}")
+    except ValueError as e:
+        print(f"Erro: {e}")
 
-# Remova a coluna de pontuação antes de salvar
-if 'Pontuação' in selecao.columns:
-    selecao = selecao.drop(columns=['Pontuação'])
+# Remover a coluna de pontuação antes de salvar
+if 'Pontuação Positiva' in selecao.columns:
+    selecao = selecao.drop(columns=['Pontuação Positiva'])
+
 
 
 ### Regressão
