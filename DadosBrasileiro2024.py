@@ -6,6 +6,14 @@ import streamlit as st
 import pandas as pd #pandas==2.0.2
 import plotly.express as px #plotly==5.15.0
 import openpyxl as op
+# Selecione o folder
+# .\footstats\Scripts\activate
+# streamlit run footstats_st.py
+
+import streamlit as st
+import pandas as pd #pandas==2.0.2
+import plotly.express as px #plotly==5.15.0
+import openpyxl as op
 from factor_analyzer.factor_analyzer import calculate_bartlett_sphericity
 from factor_analyzer.factor_analyzer import calculate_kmo
 from sklearn.preprocessing import StandardScaler
@@ -19,7 +27,7 @@ from scipy.stats import pearsonr # correlações de Pearson
 import statsmodels.formula.api as smf # estimação de modelos
 import requests
 import plotly.graph_objs as go
-from ahp_gaussiano import calcular_ahp_gaussiano
+from AHP_Gaussiano import MelhoresEscolhas
 
 
 # Configuração da página
@@ -171,8 +179,11 @@ chaves = ['Equipe', 'Jogador']
 # Junção dos DataFrames usando as chaves de relacionamento
 dados_footstats = pd.merge(dados_footstats, transfermarket, on=chaves)
 
+
+import pandas as pd
+
 # Função para selecionar o melhor jogador por posição
-def selecionar_melhor_jogador(df, posicao, criterios_positivos, criterios_negativos):
+def selecionar_melhor_jogador(df, nome, posicao, criterios_positivos, criterios_negativos):
     # Verificar se a coluna 'Posição' existe no DataFrame
     if 'Posição' not in df.columns:
         print(f"Aviso: A coluna 'Posição' não está presente no DataFrame. Não é possível selecionar os melhores jogadores para a posição '{posicao}'.")
@@ -201,51 +212,31 @@ def selecionar_melhor_jogador(df, posicao, criterios_positivos, criterios_negati
     # Selecionar apenas as colunas de critérios positivos e negativos
     jogadores_selecionados = jogadores_posicao[['Equipe', 'Jogador'] + criterios_positivos + criterios_negativos]
     
-    # Verificar se há jogadores selecionados para essa posição
-    if jogadores_selecionados.empty:
-        print(f"Aviso: Não há jogadores selecionados para a posição '{posicao}' após filtragem de critérios.")
-        return pd.DataFrame()  # Retorna um DataFrame vazio
-    
-    # Separar critérios positivos e negativos para o AHP Gaussiano
-    positivos = jogadores_selecionados[criterios_positivos]
-    negativos = jogadores_selecionados[criterios_negativos]
-    
-    # Verificar se existem dados suficientes para calcular o AHP Gaussiano
-    if positivos.empty or negativos.empty:
-        print(f"Aviso: Não há dados suficientes para calcular AHP Gaussiano para a posição '{posicao}'.")
-        return pd.DataFrame()  # Retorna um DataFrame vazio
-    
     # Garantir que todas as colunas sejam numéricas e não tenham valores nulos
-    positivos = positivos.apply(pd.to_numeric, errors='coerce').fillna(0)
-    negativos = negativos.apply(pd.to_numeric, errors='coerce').fillna(0)
-
-    # Imprimir a estrutura dos dados antes de chamar a função
-    print(f"Positivos para {posicao}:")
-    print(positivos.head())
-    print(f"Negativos para {posicao}:")
-    print(negativos.head())
-
+    jogadores_selecionados[criterios_positivos + criterios_negativos] = jogadores_selecionados[criterios_positivos + criterios_negativos].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
     # Calcular AHP Gaussiano para os critérios positivos e negativos
     try:
-        pontuacao_positiva = calcular_ahp_gaussiano(positivos, negativos)
+        pontuacao_positiva = MelhoresEscolhas(df, nome, posicao, criterios_positivos, criterios_negativos)
     except Exception as e:
         print(f"Erro ao calcular AHP Gaussiano: {e}")
-        return pd.DataFrame()  # Retorna um DataFrame vazio
+        pontuacao_positiva = pd.DataFrame({'Resultado': [0] * len(jogadores_selecionados)})  # Fallback para pontuação 0 em caso de erro
+    
+    # Verificar se a pontuação foi calculada corretamente
+    if 'Resultado' not in pontuacao_positiva.columns:
+        print(f"Aviso: A pontuação positiva não foi calculada corretamente. Usando pontuação padrão.")
+        pontuacao_positiva['Resultado'] = 0  # Garantir que a pontuação seja zero se houver um problema
     
     # Adicionar a pontuação positiva ao DataFrame original dos jogadores
-    jogadores_selecionados['Pontuação Positiva'] = pontuacao_positiva['AHP Gaussiano']
+    jogadores_selecionados['Pontuação Positiva'] = pontuacao_positiva['Resultado']
     
-    # Selecionar os dois jogadores com a maior pontuação positiva (para zagueiros e meias)
-    if posicao in ['Zagueiro', 'Meia Ofensivo']:
+    # Selecionar os melhores jogadores com base na posição
+    if posicao in ['Zagueiro']:
         melhores_jogadores = jogadores_selecionados.nlargest(2, 'Pontuação Positiva')
     else:
         melhores_jogadores = jogadores_selecionados.nlargest(1, 'Pontuação Positiva')
     
-    # Retornar os melhores jogadores com 'Jogador' e 'Equipe' incluídos
     return melhores_jogadores[['Equipe', 'Jogador'] + criterios_positivos + criterios_negativos + ['Pontuação Positiva']]
-
-
-# Exemplo de como você pode usar a função em seu loop
 
 # Iterar sobre as posições e calcular os melhores jogadores
 selecao = pd.DataFrame()
@@ -253,56 +244,77 @@ selecao = pd.DataFrame()
 # Defina os critérios de pontuação por posição (positivos e negativos)
 criterios_por_posicao = {
     'Centroavante': {
-        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Dribles'],
+        'Positivos': ['Jogos','Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Dribles','Passe certo'],
         'Negativos': ['Impedimentos','Finalização errada', 'Drible errado','Impedimentos']
     },
     'Ponta Esquerda': {
-        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+        'Positivos': ['Jogos','Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo','Passe certo'],
         'Negativos': ['Lançamento errado', 'Interceptação errada','Perda da posse de bola','Drible errado','Virada de jogo errada','Falta cometida']
     },
     'Ponta Direita': {
-        'Positivos': ['Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo'],
+        'Positivos': ['Jogos','Gols', 'Assistência finalização', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Cruzamento certo','Passe certo'],
         'Negativos': ['Falta cometida', 'Lançamento errado','Perda da posse de bola', 'Finalização errada','Interceptação errada','Passe errado']
     },
     'Meia Ofensivo': {
-        'Positivos': ['Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo'],
-        'Negativos': ['Falta cometida', 'Virada de jogo errada','Perda da posse de bola', 'Finalização errada','Passe errado']
+        'Positivos': ['Jogos','Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo',],
+        'Negativos': ['Finalização errada', 'Drible errado', 'Falta cometida', 'Passe errado']
     },
     'Meia Central': {
-        'Positivos': ['Assistência finalização', 'Passe certo', 'Assistência gol', 'Interceptação certa', 'Finalização certa'],
-        'Negativos': ['Falta cometida', 'Passe errado','Perda da posse de bola', 'Finalização errada']
+        'Positivos': ['Jogos','Gols', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo',],
+        'Negativos': ['Finalização errada', 'Drible errado', 'Falta cometida', 'Passe errado']
     },
     'Volante': {
-        'Positivos': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
-        'Negativos': ['Falta cometida', 'Passe errado','Perda da posse de bola', 'Finalização errada']
-    },
-    'Lateral Esq.': {
-        'Positivos': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
-        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
-    },
-    'Lateral Dir.': {
-        'Positivos': ['Interceptação certa', 'Passe certo', 'Virada de jogo certa'],
-        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
+        'Positivos': ['Jogos','Interceptação certa','Lançamento certo' , 'Passe certo'],
+        'Negativos': ['Interceptação errada', 'Falta cometida', 'Cartão amarelo']
     },
     'Zagueiro': {
-        'Positivos': ['Interceptação certa', 'Assistência finalização', 'Passe certo', 'Finalização certa', 'Assistência gol', 'Lançamento certo', 'Virada de jogo certa'],
-        'Negativos': ['Falta cometida', 'Virada de jogo errada', 'Lançamento errado','Interceptação errada','Falta cometida','Passe errado','Perda da posse de bola']
+        'Positivos': ['Jogos','Interceptação certa','Lançamento certo' , 'Passe certo'],
+        'Negativos': ['Interceptação errada', 'Falta cometida', 'Cartão amarelo']
+    },
+    'Lateral Dir.': {
+        'Positivos': ['Jogos','Cruzamento certo', 'Interceptação certa', 'Assistência finalização', 'Passe certo'],
+        'Negativos': ['Cruzamento errado', 'Falta cometida', 'Interceptação errada', 'Passe errado']
+    },
+    'Lateral Esq.': {
+        'Positivos': ['Jogos','Cruzamento certo', 'Interceptação certa', 'Assistência finalização', 'Passe certo'],
+        'Negativos': ['Cruzamento errado', 'Falta cometida', 'Interceptação errada', 'Passe errado']
     },
     'Goleiro': {
-        'Positivos': ['Rebatida', 'Defesa', 'Passe certo', 'Defesa difícil'],
-        'Negativos': ['Falta cometida', 'Perda da posse de bola', 'Passe errado']
+        'Positivos': ['Jogos','Defesa', 'Defesa difícil', 'Passe certo'],
+        'Negativos': ['Falta cometida', 'Passe errado']
     }
 }
 
+
+
+resultados = []
+
+# Defina as colunas esperadas (ajuste conforme suas colunas reais)
+
 for posicao, criterios in criterios_por_posicao.items():
     try:
-        melhor_jogador = selecionar_melhor_jogador(dados_footstats, posicao, criterios['Positivos'], criterios['Negativos'])
+        # Seleciona o melhor jogador de acordo com os critérios
+        melhor_jogador = selecionar_melhor_jogador(dados_footstats, 'Jogador', posicao, criterios['Positivos'], criterios['Negativos'])
+        
+        # Verifica se há resultados e padroniza as colunas
         if not melhor_jogador.empty:
-            selecao = pd.concat([selecao, melhor_jogador], ignore_index=True)
+            # Padroniza as colunas do DataFrame
+            melhor_jogador = melhor_jogador.reindex(fill_value=np.nan)
+            resultados.append(melhor_jogador)
     except KeyError as e:
-        print(f"Erro: {e}")
+        print(f"Erro: Coluna não encontrada - {e}")
     except ValueError as e:
-        print(f"Erro: {e}")
+        print(f"Erro: Valor inválido - {e}")
+
+# Após o loop, concatena todos os DataFrames resultantes
+if resultados:
+    selecao = pd.concat(resultados, ignore_index=True)
+else:
+    print("Nenhum jogador selecionado.")
+
+selecao = pd.merge(selecao, 
+                   dados_footstats[['Jogador', 'Equipe', 'Posição', 'Idade', 'Valor em Reais']], 
+                   on=['Jogador', 'Equipe'], how='inner')
 
 # Remover a coluna de pontuação antes de salvar
 if 'Pontuação Positiva' in selecao.columns:
@@ -495,8 +507,22 @@ def filtrar_dados_por_clube(dados_footstats, clube_selecionado):
         return dados_footstats
     else:
         return dados_footstats[dados_footstats['Equipe'] == clube_selecionado]
-    
-    
+
+## Função para extrair a idade
+def extrair_idade(valor):
+    try:
+        return valor.split(' ')[1].strip('()')  # Extrai a idade entre parênteses
+    except (IndexError, AttributeError):
+        return None  # Retorna None se o formato for inválido ou valor não for uma string
+
+# Função para extrair o ano de nascimento
+def extrair_ano_nascimento(valor):
+    try:
+        return valor.split(' ')[0]  # Extrai o ano de nascimento
+    except (IndexError, AttributeError):
+        return None  # Retorna None se o formato for inválido ou valor não for uma string
+
+
 
 # Títulos e criação das abas
 st.title('Dashboard Brasileirão 2024 ⚽')
@@ -819,76 +845,91 @@ with abas[4]:
     st.plotly_chart(fig)
 
     
+   
+    # Primeira aba: Classificação
+    with abas[5]:
+        # Verificar se a coluna 'Idade' existe no DataFrame
+        if 'Idade' in selecao.columns:
+            selecao['Ano de Nascimento'] = selecao['Idade'].apply(extrair_ano_nascimento)
+            selecao['Idade'] = selecao['Idade'].apply(extrair_idade)
+        else:
+            print("A coluna 'Idade' não está presente no DataFrame.")
 
-# Primeira aba: Classificação
-with abas[5]:
-    # Separando a idade do ano de nascimento
-    selecao['Ano de Nascimento'] = selecao['Idade'].apply(lambda x: x.split(' ')[0])
-    selecao['Idade'] = selecao['Idade'].apply(lambda x: x.split(' ')[1].strip('()'))
+        # Verifique os dados para garantir que estão corretos
+        print(selecao.head())  # Exibe as primeiras linhas para entender o formato da coluna 'Idade'
 
-    # Formatando o valor de mercado como dinheiro
-    selecao['Valor em Reais'] = selecao['Valor em Reais'].apply(lambda x: f"R${x:,.2f}" if pd.notna(x) else 'N/A')
+        # Verificar se a coluna 'Valor em Reais' existe
+        if 'Valor em Reais' in selecao.columns:
+            selecao['Valor em Reais'] = selecao['Valor em Reais'].apply(lambda x: f"R${x:,.2f}" if pd.notna(x) else 'N/A')
+        else:
+            print("A coluna 'Valor em Reais' não está presente no DataFrame.")
 
-    # Reordenando as colunas
-    selecao = selecao[['Equipe', 'Jogador', 'Jogos', 'Posição', 'Idade', 'Valor em Reais']]
-    
-    # Convertendo o DataFrame para HTML com estilo
-    html_table = selecao.to_html(index=False, justify='center', border=0, classes='styled-table')
+        # Reordenando as colunas
+        selecao = selecao[['Equipe', 'Jogador', 'Jogos', 'Posição', 'Idade', 'Valor em Reais']]
 
-    # Definindo estilo CSS
-    css = """
-        <style>
-        .styled-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 25px 0;
-            font-size: 0.9em;
-            font-family: 'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', 'Lucida Sans', 'Arial', 'sans-serif';
-            min-width: 400px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-        }
-        .styled-table thead tr {
-            background-color: #023047;
-            color: #ffffff;
-            text-align: left;
-        }
-        .styled-table th,
-        .styled-table td {
-            padding: 12px 15px;
-        }
-        .styled-table tbody tr {
-            border-bottom: 1px solid #dddddd;
-        }
-        .styled-table tbody tr:nth-of-type(even) {
-            background-color: #f3f3f3;
-        }
-        .styled-table tbody tr:last-of-type {
-            border-bottom: 2px solid #023047;
-        }
-        .styled-table tbody tr.active-row {
-            font-weight: bold;
-            color: #023047;
-        }
-        </style>
-    """
+        # Convertendo o DataFrame para HTML com estilo
+        html_table = selecao.to_html(index=False, justify='center', border=0, classes='styled-table')
 
-    # Convertendo o dicionário para um DataFrame
-    criterios_df = pd.DataFrame(dict([(k, pd.Series(v)) for k,v in criterios_por_posicao.items()])).T
-    criterios_df = criterios_df.reset_index()
-    criterios_df.columns = ['Posição', 'Critério 1', 'Critério 2', 'Critério 3', 'Critério 4', 'Critério 5', 'Critério 6', 'Critério 7']
+        # Convertendo o dicionário para um DataFrame, garantindo que as chaves correspondam corretamente
+        criterios_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in criterios_por_posicao.items()])).T
 
-    # Convertendo o DataFrame de critérios para HTML com estilo
-    html_criterios = criterios_df.to_html(index=False, justify='center', border=0, classes='styled-table')
+        # Verificando o número de colunas no DataFrame
+        print(f"Número de colunas no DataFrame: {criterios_df.shape[1]}")
 
+        # Se o número de colunas for 8, defina os nomes corretamente
+        if criterios_df.shape[1] == 8:
+            criterios_df.columns = ['Posição', 'Critério 1', 'Critério 2', 'Critério 3', 'Critério 4', 'Critério 5', 'Critério 6', 'Critério 7']
+        else:
+            # Ajuste dinâmico para a quantidade real de critérios
+            criterios_df.columns = ['Posição'] + [f'Critério {i+1}' for i in range(criterios_df.shape[1]-1)]
 
-# Exibindo a tabela estilizada no Streamlit
+        # Resetando o índice
+        criterios_df = criterios_df.reset_index(drop=True)
 
-    #st.header("Seleção do Campeonato de Futebol")
+        # Definindo o estilo CSS para a tabela
+        css = """
+            <style>
+            .styled-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 25px 0;
+                font-size: 0.9em;
+                font-family: 'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', 'Lucida Sans', 'Arial', 'sans-serif';
+                min-width: 400px;
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+            }
+            .styled-table thead tr {
+                background-color: #023047;
+                color: #ffffff;
+                text-align: left;
+            }
+            .styled-table th,
+            .styled-table td {
+                padding: 12px 15px;
+            }
+            .styled-table tbody tr {
+                border-bottom: 1px solid #dddddd;
+            }
+            .styled-table tbody tr:nth-of-type(even) {
+                background-color: #f3f3f3;
+            }
+            .styled-table tbody tr:last-of-type {
+                border-bottom: 2px solid #023047;
+            }
+            .styled-table tbody tr.active-row {
+                font-weight: bold;
+                color: #023047;
+            }
+            </style>
+        """
 
-    # Renderizando a tabela estilizada no Streamlit
-    st.markdown("<h2>Seleção do Campeonato de Futebol</h2>" + css + html_table, unsafe_allow_html=True)
+        # Convertendo o DataFrame para HTML com estilo
+        html_criterios = criterios_df.to_html(index=False, justify='center', border=0, classes='styled-table')
 
-    st.markdown("<h2>Critérios por Posição</h2>" + css + html_criterios, unsafe_allow_html=True)
+        # Exibindo a tabela estilizada no Streamlit
+        st.markdown("<h2>Seleção do Campeonato de Futebol</h2>" + css + html_table, unsafe_allow_html=True)
+
+        st.markdown("<h2>Critérios por Posição</h2>" + css + html_criterios, unsafe_allow_html=True)
 
 with abas[6]:
     st.header("Relatório do Clube")
